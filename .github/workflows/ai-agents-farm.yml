@@ -1,0 +1,78 @@
+name: CEREBRON Farm 18 AI Agents
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  agents:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {role: AGENT_ARCHITECT, focus: agent architecture, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: PLANNING_SPECIALIST, focus: planning and decomposition, model: huggingface-projects/gemma-2-9b-it}
+          - {role: ROUTING_SPECIALIST, focus: task and model routing, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: TOOL_USE_SPECIALIST, focus: tool execution and verification, model: huggingface-projects/gemma-2-9b-it}
+          - {role: MEMORY_ARCHITECT, focus: memory and retrieval, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: MULTI_AGENT_COORDINATOR, focus: multi-agent coordination, model: huggingface-projects/gemma-2-9b-it}
+          - {role: SWARM_ORCHESTRATION_SPECIALIST, focus: swarm orchestration, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: WORKFLOW_COMPILER, focus: workflow compilation, model: huggingface-projects/gemma-2-9b-it}
+          - {role: CAPABILITY_EVALUATOR, focus: capability evaluation, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: BENCHMARK_DESIGNER, focus: benchmark design, model: huggingface-projects/gemma-2-9b-it}
+          - {role: COST_LATENCY_ANALYST, focus: cost latency efficiency, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: RELIABILITY_SPECIALIST, focus: reliability and recovery, model: huggingface-projects/gemma-2-9b-it}
+          - {role: SAFETY_GUARDRAIL_AUDITOR, focus: safety and guardrails, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: PROMPT_PROTOCOL_AUDITOR, focus: prompts protocols interfaces, model: huggingface-projects/gemma-2-9b-it}
+          - {role: FAILURE_MODE_HUNTER, focus: failure modes and edge cases, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: RED_TEAM_AGENT, focus: adversarial red team, model: huggingface-projects/gemma-2-9b-it}
+          - {role: REPLICATOR, focus: independent replication, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: VERIFIER, focus: verification and provenance, model: huggingface-projects/gemma-2-9b-it}
+          - {role: SYNTHESIZER, focus: synthesis across roles, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: OMEGA_JUDGE, focus: final evidence bounded judgment, model: huggingface-projects/gemma-2-9b-it}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install hf-gradio
+      - name: Run external AI role
+        env:
+          ROLE: ${{ matrix.role }}
+          FOCUS: ${{ matrix.focus }}
+          MODEL: ${{ matrix.model }}
+        run: python scripts/ai_agent_worker.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: farm18-${{ matrix.role }}
+          path: out/${{ matrix.role }}.json
+
+  omega-fusion:
+    if: always()
+    needs: agents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: farm18-*
+          merge-multiple: true
+          path: results
+      - name: Fuse evidence packet
+        run: |
+          python - <<'PY'
+          import json,glob,os
+          files=glob.glob('results/*.json')
+          rows=[]
+          for f in files:
+            try: rows.append(json.load(open(f)))
+            except: pass
+          out={'roles_returned':len(rows),'successful_external_ai_calls':sum(bool(x.get('inference_success')) for x in rows),'model_families':sorted(set(x.get('model','') for x in rows)),'epistemic_status':'UNREVIEWED_EXTERNAL_AGENT_OUTPUT','results':rows}
+          os.makedirs('omega',exist_ok=True)
+          json.dump(out,open('omega/farm18-omega.json','w'),ensure_ascii=False,indent=2)
+          print(json.dumps({k:out[k] for k in ['roles_returned','successful_external_ai_calls','model_families']},ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: farm18-omega-packet
+          path: omega/farm18-omega.json
